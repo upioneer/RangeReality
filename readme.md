@@ -1,87 +1,56 @@
 # RangeReality
 
-[![Release](https://img.shields.io/github/v/release/upioneer/RangeReality?style=flat-square&color=22c55e)](https://github.com/upioneer/RangeReality/releases)
-[![License](https://img.shields.io/github/license/upioneer/RangeReality?style=flat-square&color=6366f1)](LICENSE.md)
 [![Platform](https://img.shields.io/badge/ESP32-Arduino-000000?style=flat-square&logo=espressif&logoColor=white)](platformio.ini)
 [![Repo Size](https://img.shields.io/github/repo-size/upioneer/RangeReality?style=flat-square&color=38bdf8)](https://github.com/upioneer/RangeReality)
 
-> Built with [Code Scaffold](https://code-scaffold.com) — the AI-native project scaffolding system.
+Real world range telemetry for the Ford F-150 Lightning, on a dash mounted ESP32 display. It replaces the factory guess-o-meter with live pack math, pace based range, and driving advice that accounts for tires, wind, hills, and load.
 
-## Overview
+## Hardware
 
-[A concise 1-2 sentence description of what this project does and who it is for.]
+* ESP32-2432S028R CYD (2.8 inch 320x240, ST7789) running the car UI
+* BLE OBD2 adapter (Veepeak profile first, registry is extensible)
+* Spare ESP32 running the desk simulator for development without the truck
+* Optional later: MPU6050 accelerometer, GPS module
 
-## Tech Stack
+## What works now
 
-| Layer        | Technology          |
-|-------------|---------------------|
-| Frontend     | [e.g. Next.js, React] |
-| Backend      | [e.g. Node.js, Rust]  |
-| Database     | [e.g. Supabase, Firebase] |
-| Hosting      | [e.g. Vercel, Firebase Hosting] |
-| Auth         | [e.g. Clerk, Firebase Auth] |
+* LVGL interface with splash, trip strip, hero Pace Range, advisory marquee, and a two color gradient power gauge with session peaks
+* Park detection flips the gauge into a full bar charge meter (0 to 200 kW)
+* BLE central link with adapter profiles, ELM327 init, and live pack volts and amps
+* Standard theme in landscape, portrait parked until acceptance
+* BOOT button input: single press reserved, double press cycles themes, long press resets trip
+* Host tested meter math via `pio test -e native`
 
-## Getting Started
+## Quickstart
 
-### Prerequisites
-
-- Node.js >= 18
-- [Any other requirements]
-
-### Installation
-
-```bash
-git clone https://github.com/[USERNAME]/[REPO].git
-cd [REPO]
-npm install
+```powershell
+pio run -e esp32-2432s028r -t upload --upload-port COM3
+pio run -e obd-sim -t upload --upload-port COMx
+pio device monitor -b 115200
+pio test -e native
 ```
 
-### Environment Setup
+Type `status` in the monitor for theme, orientation, and link state. Type `orient portrait` to preview the parked layout.
 
-Copy the example environment file and fill in your values:
-
-```bash
-cp .env.example .env.local
-```
-
-### Development
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-## Project Structure
+## Project structure
 
 ```
 .
-├── apps/               # Application modules (web, mobile, desktop, api)
-├── packages/           # Shared libraries and internal packages
-├── .skills/            # AI agent skill modules
-├── project_details/    # Documentation, changelogs, and playbooks
-├── agent.md            # AI agent behavioral rules
-├── plan.md             # Project roadmap and milestones
-└── design.md           # Architecture and UI/UX blueprints
+├── src/                  # Car UI firmware (main, themes, state, meter, button)
+├── src/obd/              # ELM327 protocol and BLE central link
+├── src/sim_main.cpp       # Desk simulator firmware (obd-sim env)
+├── include/              # LVGL config (unique name, see readme in file)
+├── test/                 # Host Unity tests for meter math
+├── project_details/      # design.md, theme mocks, agent rules
+└── TODO.md               # Polish list for after truck validation
 ```
 
-## Scripts
+## Docs
 
-| Command         | Description                         |
-|----------------|-------------------------------------|
-| `npm run dev`   | Start local development server      |
-| `npm run build` | Build for production                |
-| `npm run test`  | Run test suite                      |
-| `npm run lint`  | Lint and format check               |
-
-## Contributing
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution guidelines and the PR process.
+* `project_details/design.md`: vehicle, hardware, and UI architecture
+* `project_details/assets/mock/`: kitt, minimalist, standard, steampunk theme targets
+* `TODO.md`: deferred polish items
 
 ## License
 
-See [LICENSE.md](./LICENSE.md) for full license terms.
-
----
-
-*Scaffolded by [Code Scaffold](https://code-scaffold.com)*
+Proprietary, see [LICENSE.md](./LICENSE.md).
