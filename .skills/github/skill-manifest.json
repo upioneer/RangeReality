@@ -1,0 +1,28 @@
+{
+  "$schema": "https://code-scaffold.com/schemas/v1/skill-manifest.json",
+  "specification": "https://code-scaffold.com/spec/v1",
+  "name": "code_scaffold_github_skill",
+  "version": "5",
+  "description": "GitHub push workflow with .env-based identity configuration; merges github.md into the skill",
+  "entryPoint": "./SKILL.md",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "requiredPermissions": [
+    "fs:read",
+    "fs:write",
+    "net:connect"
+  ],
+  "category": "DevOps & Infrastructure",
+  "keywords": [
+    "github",
+    "git",
+    "github-actions",
+    "cicd",
+    "pull-requests",
+    "releases",
+    "repo-management"
+  ],
+  "hasSandbox": false,
+  "integrity": "cs:sha256:b4ffb2619a0fd9ea091545f639752080ac19ded2a9608d63f8429088328dd8af"
+}
