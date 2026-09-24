@@ -1,5 +1,7 @@
+#include <string.h>
 #include <unity.h>
 
+#include "../src/advisor.h"
 #include "../src/meter.h"
 
 void setUp(void) {}
@@ -26,16 +28,40 @@ void test_drive_fill_splits(void) {
   MeterDriveFill f = meter_drive_fill(0, 140);
   TEST_ASSERT_EQUAL(0, f.neg_w);
   TEST_ASSERT_EQUAL(0, f.pos_w);
-  f = meter_drive_fill(60, 140);
+  f = meter_drive_fill(220, 140);
   TEST_ASSERT_EQUAL(70, f.pos_w);
   TEST_ASSERT_EQUAL(0, f.neg_w);
-  f = meter_drive_fill(-30, 140);
+  f = meter_drive_fill(-110, 140);
   TEST_ASSERT_EQUAL(70, f.neg_w);
   TEST_ASSERT_EQUAL(0, f.pos_w);
   f = meter_drive_fill(999, 140);
   TEST_ASSERT_EQUAL(140, f.pos_w);
   f = meter_drive_fill(-999, 140);
   TEST_ASSERT_EQUAL(140, f.neg_w);
+}
+
+void test_advisor_charging_state(void) {
+  char b[64];
+  advisor_pick(120.0f, 0.0f, true, 0, b, sizeof(b));
+  TEST_ASSERT_EQUAL_STRING("Charging +120 kW", b);
+  advisor_pick(0.0f, 0.0f, true, 0, b, sizeof(b));
+  TEST_ASSERT_EQUAL_STRING("Ready to charge", b);
+}
+
+void test_advisor_watt_and_regen(void) {
+  char b[64];
+  advisor_pick(90.0f, 0.0f, false, 0, b, sizeof(b));
+  TEST_ASSERT_EQUAL_STRING("Watt in Tarnation!", b);
+  advisor_pick(-12.0f, 0.0f, false, 0, b, sizeof(b));
+  TEST_ASSERT_EQUAL_STRING("Regen banking energy", b);
+}
+
+void test_advisor_aero_tip_is_live(void) {
+  char b[64];
+  advisor_pick(43.0f, 100.0f, false, 0, b, sizeof(b));
+  TEST_ASSERT_TRUE(strstr(b, "63 mph") != nullptr);
+  advisor_pick(10.0f, 100.0f, false, 0, b, sizeof(b));
+  TEST_ASSERT_TRUE(strstr(b, "63 mph") == nullptr);
 }
 
 int main(int argc, char **argv) {
@@ -46,5 +72,8 @@ int main(int argc, char **argv) {
   RUN_TEST(test_reverse_neutral_drive_stay_split);
   RUN_TEST(test_charge_fill_clamps);
   RUN_TEST(test_drive_fill_splits);
+  RUN_TEST(test_advisor_charging_state);
+  RUN_TEST(test_advisor_watt_and_regen);
+  RUN_TEST(test_advisor_aero_tip_is_live);
   return UNITY_END();
 }

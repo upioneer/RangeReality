@@ -29,11 +29,12 @@ void standard_update(void);
 
 static void ble_paint(void) {
   if (s_ui.ble == nullptr) return;
-  lv_color_t c = lv_color_make(0x50, 0x50, 0x50);
+  // Red reads as not connected, neutral grey while scanning, blue linked.
+  lv_color_t c = lv_color_make(0xE0, 0x30, 0x10);
   if (g_ble == BleLink::CONNECTED) {
     c = lv_color_make(0x2E, 0x9B, 0xFF);
   } else if (g_ble == BleLink::SCANNING) {
-    c = lv_color_make(0xFF, 0xD7, 0x00);
+    c = lv_color_make(0xB0, 0xB0, 0xB0);
   }
   lv_obj_set_style_text_color(s_ui.ble, c, LV_PART_MAIN);
 }
@@ -42,7 +43,7 @@ static lv_obj_t *mk_ble(lv_obj_t *parent) {
   lv_obj_t *l = lv_label_create(parent);
   lv_label_set_text(l, LV_SYMBOL_BLUETOOTH);
   lv_obj_set_style_text_font(l, &lv_font_montserrat_14, LV_PART_MAIN);
-  lv_obj_set_style_text_color(l, lv_color_make(0x50, 0x50, 0x50), LV_PART_MAIN);
+  lv_obj_set_style_text_color(l, lv_color_make(0xE0, 0x30, 0x10), LV_PART_MAIN);
   return l;
 }
 
@@ -245,9 +246,18 @@ void standard_update(void) {
     shown_kw += step;
   }
   bool charge = meter_mode(g_state.gear == Gear::PARK) == MeterMode::CHARGE;
+  if (s_ui.maxl != nullptr) {
+    if (charge) {
+      lv_obj_add_flag(s_ui.maxl, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_add_flag(s_ui.maxr, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_clear_flag(s_ui.maxl, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_clear_flag(s_ui.maxr, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
   if (s_ui.kw_num != nullptr) {
     if (charge) {
-      lv_label_set_text_fmt(s_ui.kw_num, "CHARGE +%d kW", shown_kw < 0 ? 0 : shown_kw);
+      lv_label_set_text_fmt(s_ui.kw_num, "+%d kW", shown_kw < 0 ? 0 : shown_kw);
     } else if (s_orient == Orientation::LANDSCAPE) {
       lv_label_set_text_fmt(s_ui.kw_num,
                             (shown_kw >= 0 ? "POWER +%d kW" : "REGEN %d kW"), shown_kw);

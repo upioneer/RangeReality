@@ -20,5 +20,6 @@
 #define LV_USE_BAR 1
 #define LV_USE_LABEL 1
 #define LV_USE_CANVAS 1
+#define LV_USE_SPINNER 1
 
 #endif

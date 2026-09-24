@@ -14,6 +14,7 @@ enum class Gear : int {
 struct VehicleState {
   int pace_mi = 247;
   int kw = 0;
+  float speed_kmh = 0.0f;
   Gear gear = Gear::DRIVE;
   int max_draw_kw = 0;
   int max_regen_kw = 0;

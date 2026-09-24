@@ -1,0 +1,57 @@
+name: New adapter
+description: Request support for a BLE OBD2 adapter
+title: "[adapter]: "
+labels: ["adapter"]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Exact brand and model
+    validations:
+      required: true
+  - type: input
+    id: purchase
+    attributes:
+      label: Purchase link (major retailer only)
+      description: Amazon, Walmart, or manufacturer direct. No marketplace or unknown-seller links.
+    validations:
+      required: true
+  - type: dropdown
+    id: phone_os
+    attributes:
+      label: Phone OS used for capture
+      options:
+        - iOS
+        - Android
+    validations:
+      required: true
+  - type: input
+    id: adv_name
+    attributes:
+      label: Advertised name (Complete Local Name)
+    validations:
+      required: true
+  - type: textarea
+    id: adv_uuids
+    attributes:
+      label: Advertising Service UUIDs
+      description: Full Service UUID list from advertising data and scan response in nRF Connect.
+    validations:
+      required: true
+  - type: textarea
+    id: gatt
+    attributes:
+      label: GATT services after CONNECT
+      description: |
+        One block per service, exact UUIDs, for example:
+        Service UUID: FFF0
+        - FFF2: WRITE, WRITE WITHOUT RESPONSE
+        - FFF1: NOTIFY
+        Flag the WRITE characteristic and the NOTIFY characteristic.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Attach the nRF Connect scan screen and the connected service list.

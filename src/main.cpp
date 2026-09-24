@@ -7,6 +7,10 @@
 #include "themes.h"
 #include "button.h"
 #include "obd/ble_link.h"
+#include "splash_img.h"
+
+#include "fw_version.h"  // generated each build by tools/gen_fw_version.py
+#define SPLASH_MS 10000
 
 // ESP32-2432S028R (2.8" CYD): ST7789 240x320.
 // NOTE: this unit carries the ST7789 panel variant, not ILI9341.
@@ -135,6 +139,54 @@ static void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t
 }
 
 // --- State tick + splash ---
+static void state_tick(lv_timer_t *t);
+
+static lv_obj_t *s_splash = nullptr;
+static lv_obj_t *s_idle = nullptr;
+static lv_obj_t *s_idle_status = nullptr;
+static bool s_showing_idle = true;
+static uint32_t s_last_link_ms = 0;
+
+// HERO IMAGE SLOT: drop the truck art at project_details/assets/hero/
+// and it gets converted to a canvas here. Until then, type only.
+static void idle_show(void) {
+  if (s_idle == nullptr) {
+    s_idle = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(s_idle, lv_color_black(), LV_PART_MAIN);
+    lv_obj_t *title = lv_label_create(s_idle);
+    lv_label_set_text(title, "RangeReality");
+    lv_obj_set_style_text_color(title, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, LV_PART_MAIN);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_t *icon = lv_label_create(s_idle);
+    lv_label_set_text(icon, LV_SYMBOL_BLUETOOTH);
+    lv_obj_set_style_text_color(icon, lv_color_make(0xB0, 0xB0, 0xB0), LV_PART_MAIN);
+    lv_obj_set_style_text_font(icon, &lv_font_montserrat_48, LV_PART_MAIN);
+    lv_obj_align(icon, LV_ALIGN_CENTER, 0, -20);
+    s_idle_status = lv_label_create(s_idle);
+    lv_obj_set_style_text_color(s_idle_status, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_idle_status, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_align(s_idle_status, LV_ALIGN_CENTER, 0, 44);
+    lv_obj_t *spin = lv_spinner_create(s_idle, 1000, 60);
+    lv_obj_set_size(spin, 32, 32);
+    lv_obj_align(spin, LV_ALIGN_CENTER, 0, 92);
+  }
+  lv_scr_load(s_idle);
+  s_showing_idle = true;
+}
+
+static void splash_done(lv_timer_t *t) {
+  lv_timer_del(t);
+  lv_obj_t *old = s_splash;
+  s_splash = nullptr;
+  // Load idle BEFORE deleting splash: deleting the active screen leaves
+  // scr_act dangling and the following scr_load faults on it.
+  idle_show();
+  if (old != nullptr && old != s_idle) lv_obj_del(old);
+  state_tick(nullptr);
+  lv_timer_create(state_tick, 250, nullptr);
+}
+
 static void state_tick(lv_timer_t *t) {
   (void)t;
   static bool announced = false;
@@ -142,25 +194,25 @@ static void state_tick(lv_timer_t *t) {
     announced = true;
     Serial.println("[ui] first update, lv timers running");
   }
-  // UI framerate is independent of the link: stub values animate only
-  // while offline so live BLE data is never overwritten.
   if (g_ble != BleLink::CONNECTED) state_stub_update();
   state_track_peaks();
   state_advisory_update();
-  themes_update();
-}
-
-static lv_obj_t *s_splash = nullptr;
-
-static void splash_done(lv_timer_t *t) {
-  lv_timer_del(t);
-  themes_apply();
-  if (s_splash != nullptr) {
-    lv_obj_del(s_splash);
-    s_splash = nullptr;
+  if (g_ble == BleLink::CONNECTED) {
+    s_last_link_ms = millis();
+    if (s_showing_idle) {
+      themes_apply();
+      s_showing_idle = false;
+    }
+    themes_update();
+  } else {
+    if (!s_showing_idle && millis() - s_last_link_ms > 60000) {
+      idle_show();
+    }
+    if (s_idle_status != nullptr) {
+      lv_label_set_text(s_idle_status,
+                        g_ble == BleLink::SCANNING ? "Searching for adapter..." : "Waiting for link");
+    }
   }
-  state_tick(nullptr);
-  lv_timer_create(state_tick, 250, nullptr);
 }
 
 // --- Serial console ---
@@ -187,14 +239,14 @@ static void console_poll(void) {
       len = 0;
       if (strncmp(line, "theme ", 6) == 0) {
         if (themes_set(line + 6)) {
-          themes_apply();
+          if (!s_showing_idle) themes_apply();
           Serial.printf("[cmd] theme now %s\n", line + 6);
         } else {
           Serial.printf("[cmd] unknown or unbuilt theme '%s'\n", line + 6);
         }
       } else if (strncmp(line, "orient ", 7) == 0) {
         if (orient_set(line + 7)) {
-          themes_apply();
+          if (!s_showing_idle) themes_apply();
           Serial.printf("[cmd] orient now %s\n", line + 7);
         } else {
           Serial.println("[cmd] use orient portrait|landscape");
@@ -229,7 +281,7 @@ void setup(void) {
   Serial.begin(115200);
   delay(500);
   Serial.println();
-  Serial.println("[boot] Lightning McScreen bringup v0.2.0 (themes)");
+  Serial.println("[boot] Lightning McScreen bringup v" RR_FW_VERSION " (themes)");
   Serial.println("[boot] Ohm On The Range");
 
   themes_init();
@@ -271,20 +323,23 @@ void setup(void) {
   lv_obj_t *scr = lv_scr_act();
   s_splash = scr;
   lv_obj_set_style_bg_color(scr, lv_color_black(), LV_PART_MAIN);
-  lv_obj_t *title = lv_label_create(scr);
-  lv_label_set_text(title, "Lightning McScreen");
-  lv_obj_set_style_text_color(title, lv_color_white(), LV_PART_MAIN);
-  lv_obj_set_style_text_font(title, &lv_font_montserrat_28, LV_PART_MAIN);
-  lv_obj_align(title, LV_ALIGN_CENTER, 0, -16);
-  lv_obj_t *sub = lv_label_create(scr);
-  lv_label_set_text(sub, "Ohm On The Range");
-  lv_obj_set_style_text_color(sub, lv_color_make(0xFF, 0xD7, 0x00), LV_PART_MAIN);
-  lv_obj_set_style_text_font(sub, &lv_font_montserrat_14, LV_PART_MAIN);
-  lv_obj_align(sub, LV_ALIGN_CENTER, 0, 20);
+  lv_obj_t *hero = lv_img_create(scr);
+  lv_img_set_src(hero, &splash_img);
+  lv_obj_center(hero);
+  lv_obj_t *brand = lv_label_create(scr);
+  lv_label_set_text(brand, "RangeReality");
+  lv_obj_set_style_text_color(brand, lv_color_white(), LV_PART_MAIN);
+  lv_obj_set_style_text_font(brand, &lv_font_montserrat_28, LV_PART_MAIN);
+  lv_obj_align(brand, LV_ALIGN_TOP_LEFT, 8, 6);
+  lv_obj_t *fwver = lv_label_create(scr);
+  lv_label_set_text(fwver, "Firmware " RR_FW_VERSION);
+  lv_obj_set_style_text_color(fwver, lv_color_white(), LV_PART_MAIN);
+  lv_obj_set_style_text_font(fwver, &lv_font_montserrat_14, LV_PART_MAIN);
+  lv_obj_align(fwver, LV_ALIGN_TOP_LEFT, 8, 40);
 
   console_status();
   console_help();
-  lv_timer_create(splash_done, 1500, nullptr);
+  lv_timer_create(splash_done, SPLASH_MS, nullptr);
   Serial.println("[boot] LVGL splash ready");
 }
 

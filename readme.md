@@ -21,6 +21,25 @@ Real world range telemetry for the Ford F-150 Lightning, on a dash mounted ESP32
 * BOOT button input: single press reserved, double press cycles themes, long press resets trip
 * Host tested meter math via `pio test -e native`
 
+## Supported BLE adapters
+
+| Adapter | Advertised name | Service | Write char | Notify char | Buy |
+|---|---|---|---|---|---|
+| Veepeak OBDCheck BLE | `VEEPEAK` | `FFF0` | `FFF2` | `FFF1` | [Amazon](https://www.amazon.com/dp/B073XKQQQW) |
+| OBDSIM (desk simulator) | `OBDSIM` | `FFE0` | `FFE1` | `FFE1` | — |
+
+## Request support for a new adapter
+
+Adapters are added one at a time from real capture data, never from guesses. Open a GitHub issue with the **New adapter** template and include:
+
+1. Exact brand and model, plus a purchase link from a major retailer (Amazon, Walmart, or manufacturer direct). No marketplace or unknown-seller links.
+2. Your phone OS (iOS or Android).
+3. Captures from Nordic's **nRF Connect for Mobile** (App Store / Play Store). Truck ON, adapter plugged in, nothing else connected to it — kill ABRP and any other OBD app first, since only one device can hold the link:
+   - **Scan screen:** Complete Local Name plus the full Service UUID list from advertising data and scan response.
+   - **Connected screen:** tap CONNECT, wait for services, then record every service UUID and, inside each, every characteristic UUID with its properties (READ, WRITE, WRITE WITHOUT RESPONSE, NOTIFY, INDICATE).
+   - Flag which characteristic carries WRITE and which carries NOTIFY. That pair is the ELM327 doorway the firmware needs.
+4. Screenshots of both screens attached to the issue. Copy UUIDs exactly, don't paraphrase.
+
 ## Quickstart
 
 ```powershell
@@ -31,6 +50,21 @@ pio test -e native
 ```
 
 Type `status` in the monitor for theme, orientation, and link state. Type `orient portrait` to preview the parked layout.
+
+## Firmware versions
+
+The splash and boot log stamp every build from git, so the screen always tells you what it is:
+
+* `v0.4.2` — clean release build at a tag. Prod.
+* `v0.4.2-dirty` — uncommitted dev build. Expect bugs; it correlates to tag `v0.4.2` upstream but is not a release. Bump the tag per build to keep versions unique.
+* `v0.4.2-3-gSHA...` — committed work ahead of a tag. Reproducible, but not released.
+
+Release builds are gated: building with `RR_RELEASE=1` refuses to compile from a dirty tree, so a clean version string can never come from uncommitted source.
+
+```powershell
+pio run -e esp32-2432s028r -t upload --upload-port COM3            # dev/nightly
+$env:RR_RELEASE = "1"; pio run -e esp32-2432s028r -t upload --upload-port COM3  # prod, fails if dirty
+```
 
 ## Project structure
 

@@ -1,5 +1,7 @@
 #include "state.h"
 
+#include "advisor.h"
+
 VehicleState g_state;
 BleLink g_ble = BleLink::OFF;
 
@@ -9,13 +11,16 @@ void state_stub_update(void) {
 
   g_state.pace_mi = 247 + ((tick / 2) % 7) - 3;
 
-  int phase = tick % 40;
-  g_state.kw = (phase < 20) ? (phase * 4 - 20) : ((40 - phase) * 4 - 20);
+  // Offline the meter rests at true zero: a dead link must never show
+  // stale or swept values. Live data takes over on connect.
+  g_state.kw = 0;
 
   g_state.trip_mi += 0.005f;
   g_state.trip_sec += 1;
   // Stub shifter: 10 s of PARK every minute so charge mode demos offline.
   g_state.gear = ((tick % 240) >= 200) ? Gear::PARK : Gear::DRIVE;
+  // Stub speed: 15 s cruise at 101 km/h so the aero tip fires offline.
+  g_state.speed_kmh = ((tick % 120) < 60) ? 0.0f : 101.0f;
 }
 
 void state_track_peaks(void) {
@@ -28,11 +33,6 @@ void state_track_peaks(void) {
 void state_advisory_update(void) {
   static int tick = 0;
   tick++;
-  if (g_state.kw > 45 && g_state.gear != Gear::PARK) {
-    snprintf(g_state.advisory, sizeof(g_state.advisory), "Watt in Tarnation!");
-  } else if ((tick % 20) < 10) {
-    snprintf(g_state.advisory, sizeof(g_state.advisory), "+12mi by slowing to 63mph");
-  } else {
-    snprintf(g_state.advisory, sizeof(g_state.advisory), "Headwind penalty ~8 mi");
-  }
+  advisor_pick(g_state.kw, g_state.speed_kmh, g_state.gear == Gear::PARK, tick,
+               g_state.advisory, sizeof(g_state.advisory));
 }

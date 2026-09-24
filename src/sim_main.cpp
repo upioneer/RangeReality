@@ -89,11 +89,17 @@ static void answer(const String &s) {
   notify(out);
 }
 
-// Scripted pack state: 20 s discharge, 10 s regen, repeat.
+// Scripted pack state (theatrical values for UI exercise, not truck data).
+// Drive: 20 s hard discharge, 10 s regen. Park window: DC fast charge.
 static void packScript(float &volts, float &amps) {
-  uint32_t phase = (millis() / 1000) % 30;
+  uint32_t tsec = millis() / 1000;
   volts = 352.0f + sinf(millis() / 20000.0f) * 2.0f;
-  amps = (phase < 20) ? 45.0f : -15.0f;
+  if ((tsec % 60) >= 45) {
+    amps = 500.0f;
+    return;
+  }
+  uint32_t phase = tsec % 30;
+  amps = (phase < 20) ? 1100.0f : -250.0f;
 }
 
 static void screen_draw(void) {
@@ -130,7 +136,11 @@ static String handle(const String &raw) {
     snprintf(b, sizeof(b), "41 0C %02X %02X", v >> 8, v & 0xFF);
     return b;
   }
-  if (cmd == "010D") return "41 0D 00";
+  if (cmd == "010D") {
+    // Cruise 100 km/h except in the park window so the aero tip demos.
+    bool park = (millis() / 1000 % 60) >= 45;
+    return park ? "41 0D 00" : "41 0D 64";
+  }
   if (cmd == "0142") {
     uint16_t mv = 14200;
     char b[32];

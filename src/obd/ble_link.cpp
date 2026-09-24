@@ -11,16 +11,20 @@ struct ObdProfile {
   const char *tag;
   const char *name_frag;
   const char *svc;
-  const char *chr;
+  const char *tx_chr;  // we write commands here
+  const char *rx_chr;  // notifies arrive here
 };
 
 static const ObdProfile kProfiles[] = {
-    {"OBDSIM", "OBDSIM", "FFE0", "FFE1"},
-    {"VEEPEAK", "OBD", "FFE0", "FFE1"},
+    {"OBDSIM", "OBDSIM", "FFE0", "FFE1", "FFE1"},
+    // Veepeak OBDCheck BLE (B073XKQQQW): split doorway, write FFF2,
+    // notify FFF1, service FFF0.
+    {"OBDCHECK_BLE", "VEEPEAK", "FFF0", "FFF2", "FFF1"},
 };
 
 static NimBLEClient *s_client = nullptr;
-static NimBLERemoteCharacteristic *s_chr = nullptr;
+static NimBLERemoteCharacteristic *s_chr_tx = nullptr;
+static NimBLERemoteCharacteristic *s_chr_rx = nullptr;
 static bool s_have_target = false;
 static NimBLEAddress s_target = NimBLEAddress("");
 static const ObdProfile *s_profile = nullptr;
@@ -36,13 +40,28 @@ static uint8_t s_poll_step = 0;
 // Notify assembly buffer (BLE task context).
 static char s_rx[256];
 static size_t s_rx_len = 0;
+static uint32_t s_notifies = 0;
+static uint8_t s_fails = 0;
 
 static void onNotify(NimBLERemoteCharacteristic *c, uint8_t *data, size_t len, bool isNotify) {
   (void)c;
   (void)isNotify;
+  s_notifies++;
   for (size_t i = 0; i < len && s_rx_len < sizeof(s_rx) - 1; i++) {
     s_rx[s_rx_len++] = (char)data[i];
   }
+}
+
+static void force_relink(void) {
+  Serial.println("[ble] relink after repeat failures");
+  s_fails = 0;
+  s_rx_len = 0;
+  s_chr_tx = nullptr;
+  s_chr_rx = nullptr;
+  s_inited = false;
+  if (s_client != nullptr) s_client->disconnect();
+  g_ble = BleLink::SCANNING;
+  s_last_attempt = millis();
 }
 
 class ScanCb : public NimBLEAdvertisedDeviceCallbacks {
@@ -74,7 +93,8 @@ class ClientCb : public NimBLEClientCallbacks {
   void onDisconnect(NimBLEClient *c) override {
     (void)c;
     Serial.println("[ble] disconnected");
-    s_chr = nullptr;
+    s_chr_tx = nullptr;
+    s_chr_rx = nullptr;
     s_inited = false;
     g_ble = BleLink::SCANNING;
   }
@@ -82,16 +102,22 @@ class ClientCb : public NimBLEClientCallbacks {
 
 struct LinkTransport : public ElmTransport {
   bool send(const char *cmd) override {
-    if (s_chr == nullptr) return false;
+    if (s_chr_tx == nullptr) return false;
     String full(cmd);
     full += '\r';
     Serial.printf("[obd] > %s\n", cmd);
-    return s_chr->writeValue(full.c_str(), false);
+    return s_chr_tx->writeValue(full.c_str(), false);
   }
   bool recvLine(char *buf, size_t n, uint32_t timeout_ms) override {
     uint32_t start = millis();
     while (millis() - start < timeout_ms) {
-      if (s_chr == nullptr) return false;
+      if (s_chr_rx == nullptr) return false;
+      // Strip prompt residue: the previous reply's "\r\r>" tail strands
+      // a ">" that otherwise glues to the next line and poisons it.
+      while (s_rx_len > 0 && s_rx[0] == '>') {
+        memmove(s_rx, s_rx + 1, s_rx_len - 1);
+        s_rx_len--;
+      }
       char *cr = (char *)memchr(s_rx, '\r', s_rx_len);
       if (cr != nullptr) {
         size_t len = (size_t)(cr - s_rx);
@@ -128,16 +154,26 @@ static bool do_connect(void) {
     s_client->disconnect();
     return false;
   }
-  s_chr = svc->getCharacteristic(NimBLEUUID(s_profile->chr));
-  if (s_chr == nullptr || !s_chr->canNotify()) {
-    Serial.println("[ble] char missing or no notify");
-    s_chr = nullptr;
+  s_chr_tx = svc->getCharacteristic(NimBLEUUID(s_profile->tx_chr));
+  s_chr_rx = svc->getCharacteristic(NimBLEUUID(s_profile->rx_chr));
+  if (s_chr_tx == nullptr || !s_chr_tx->canWrite()) {
+    Serial.println("[ble] tx char missing or no write");
+    s_chr_tx = nullptr;
+    s_chr_rx = nullptr;
     s_client->disconnect();
     return false;
   }
-  if (!s_chr->subscribe(true, onNotify)) {
+  if (s_chr_rx == nullptr || !s_chr_rx->canNotify()) {
+    Serial.println("[ble] rx char missing or no notify");
+    s_chr_tx = nullptr;
+    s_chr_rx = nullptr;
+    s_client->disconnect();
+    return false;
+  }
+  if (!s_chr_rx->subscribe(true, onNotify)) {
     Serial.println("[ble] subscribe failed");
-    s_chr = nullptr;
+    s_chr_tx = nullptr;
+    s_chr_rx = nullptr;
     s_client->disconnect();
     return false;
   }
@@ -145,7 +181,8 @@ static bool do_connect(void) {
   Serial.println("[ble] subscribed, running ELM init");
   if (!elm::init(s_transport)) {
     Serial.println("[obd] ELM init failed");
-    s_chr = nullptr;
+    s_chr_tx = nullptr;
+    s_chr_rx = nullptr;
     s_client->disconnect();
     return false;
   }
@@ -156,6 +193,7 @@ static bool do_connect(void) {
 }
 
 static void do_poll(void) {
+  Serial.printf("[obd] poll notifies=%lu rxlen=%u\n", (unsigned long)s_notifies, (unsigned)s_rx_len);
   if (s_poll_step % 4 == 3) {
     char g = elm::gear(s_transport);
     Gear next = Gear::UNKNOWN;
@@ -172,14 +210,21 @@ static void do_poll(void) {
     if (elm::packVI(s_transport, v, a)) {
       int kw = (int)roundf(v * a / 1000.0f);
       g_state.kw = kw;
+      s_fails = 0;
       Serial.printf("[obd] pack %.1f V %.1f A -> %d kW\n", v, a, kw);
     } else {
       Serial.println("[obd] pack query failed");
+      if (++s_fails >= 8) {
+        force_relink();
+        return;
+      }
     }
   } else {
     char resp[96];
     float spd;
     if (elm::query(s_transport, "010D", resp, sizeof(resp)) && elm::decode01(resp, 0x0D, spd)) {
+      s_fails = 0;
+      g_state.speed_kmh = spd;
       Serial.printf("[obd] speed %.0f km/h\n", (double)spd);
     }
   }
@@ -196,7 +241,7 @@ void ble_link_init(void) {
 }
 
 void ble_link_poll(void) {
-  if (s_chr != nullptr && s_inited) {
+  if (s_chr_tx != nullptr && s_inited) {
     if (s_client != nullptr && !s_client->isConnected()) return;
     if (millis() - s_last_poll > OBD_POLL_MS) {
       s_last_poll = millis();
@@ -214,8 +259,13 @@ void ble_link_poll(void) {
     s_last_attempt = millis();
     g_ble = BleLink::SCANNING;
     Serial.println("[ble] scanning...");
-    NimBLEDevice::getScan()->start(1500, false);
-    NimBLEDevice::getScan()->clearResults();
+    NimBLEScan *scan = NimBLEDevice::getScan();
+    if (scan->isScanning()) scan->stop();
+    scan->clearResults();
+    // Non-blocking continuous scan: matches stream into ScanCb::onResult,
+    // which stops the scan on a hit. The blocking start(duration) overload
+    // stalls loop() for the whole window and freezes LVGL animation.
+    scan->start(0, nullptr, true);
   }
 }
 

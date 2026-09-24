@@ -4,8 +4,11 @@
 // vs drive behavior stays host-testable. Widgets only draw what these
 // functions return.
 
-#define METER_MAX_DRAW_KW 120
-#define METER_MAX_REGEN_KW 60
+// Calibrated to Lightning extended range ratings: 580 hp is about 433 kW,
+// ceiling set to 440. Regen 220 kW per owner reports, charge 200 kW estimate.
+// Both confirm at truck logging.
+#define METER_MAX_DRAW_KW 440
+#define METER_MAX_REGEN_KW 220
 #define METER_MAX_CHARGE_KW 200
 
 enum class MeterMode {
