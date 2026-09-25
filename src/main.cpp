@@ -220,6 +220,7 @@ static void console_help(void) {
   Serial.println("[cmd] theme <standard|kitt|minimalist|steampunk>");
   Serial.println("[cmd] orient <portrait|landscape>");
   Serial.println("[cmd] status");
+  Serial.println("[cmd] probe   (log standard PID replies while connected)");
 }
 
 static void console_status(void) {
@@ -253,6 +254,8 @@ static void console_poll(void) {
         }
       } else if (strcmp(line, "status") == 0) {
         console_status();
+      } else if (strcmp(line, "probe") == 0) {
+        ble_probe();
       } else {
         console_help();
       }

@@ -6,6 +6,7 @@ node_modules/
 target/
 .pio/
 include/fw_version.h
+include/.fw_devcount
 
 # Code Scaffold Project Details (Local Context)
 project_details/*.md

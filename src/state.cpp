@@ -5,7 +5,19 @@
 VehicleState g_state;
 BleLink g_ble = BleLink::OFF;
 
+static bool s_live_seen = false;
+
+void state_set_live_seen(void) {
+  s_live_seen = true;
+}
+
 void state_stub_update(void) {
+  if (s_live_seen) {
+    // Link dropped after live data: hold the last live shifter and speed,
+    // rest the meter at zero. Never demo modes the truck didn't report.
+    g_state.kw = 0;
+    return;
+  }
   static int tick = 0;
   tick++;
 

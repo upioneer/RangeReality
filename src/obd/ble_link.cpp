@@ -32,6 +32,9 @@ static bool s_inited = false;
 static uint32_t s_last_attempt = 0;
 static uint32_t s_last_poll = 0;
 static uint8_t s_poll_step = 0;
+static bool s_probing = false;
+
+static void probe_run(const char *const *cmds, int n);
 
 // OBD poll period. 500 ms proved too aggressive, back to 1000.
 // TODO(polish): retest faster rates against real adapter latency.
@@ -103,6 +106,9 @@ class ClientCb : public NimBLEClientCallbacks {
 struct LinkTransport : public ElmTransport {
   bool send(const char *cmd) override {
     if (s_chr_tx == nullptr) return false;
+    // Fresh command, fresh buffer: drop any prompt/echo residue so a stale
+    // fragment can never glue to the new reply and poison the parse.
+    s_rx_len = 0;
     String full(cmd);
     full += '\r';
     Serial.printf("[obd] > %s\n", cmd);
@@ -189,6 +195,16 @@ static bool do_connect(void) {
   Serial.println("[obd] ELM init OK");
   s_inited = true;
   g_ble = BleLink::CONNECTED;
+  // Fresh link, no assumptions: clear any offline-demo leftovers so the UI
+  // never shows a mode the truck didn't report. Live polls fill in from here.
+  g_state.gear = Gear::UNKNOWN;
+  g_state.kw = 0;
+  s_poll_step = 0;
+  state_set_live_seen();
+  // Self-running discovery: the support bitmasks say exactly what the
+  // vehicle answers, so every connect captures them with no typing needed.
+  static const char *kAuto[] = {"0100", "0120", "0140", "015B"};
+  probe_run(kAuto, (int)(sizeof(kAuto) / sizeof(kAuto[0])));
   return true;
 }
 
@@ -240,7 +256,35 @@ void ble_link_init(void) {
   Serial.println("[ble] central ready");
 }
 
+static void probe_run(const char *const *cmds, int n) {
+  s_probing = true;
+  for (int i = 0; i < n; i++) {
+    char resp[96];
+    if (elm::query(s_transport, cmds[i], resp, sizeof(resp))) {
+      Serial.printf("[probe] %s -> %s\n", cmds[i], resp);
+    } else {
+      Serial.printf("[probe] %s -> no reply\n", cmds[i]);
+    }
+  }
+  s_probing = false;
+}
+
+void ble_probe(void) {
+  if (g_ble != BleLink::CONNECTED || !s_inited) {
+    Serial.println("[probe] connect to the adapter first");
+    return;
+  }
+  // Standard mode-01 discovery only: support bitmasks plus a few common
+  // data PIDs. Raw replies go to the log for the truck logging trip that
+  // picks the real Lightning pack-power PIDs. No mode-22 guesses here.
+  static const char *kPids[] = {"0100", "0120", "0140", "015B", "010C",
+                                "010D", "0105", "010F", "011F", "0142", "0146"};
+  probe_run(kPids, (int)(sizeof(kPids) / sizeof(kPids[0])));
+  Serial.println("[probe] done");
+}
+
 void ble_link_poll(void) {
+  if (s_probing) return;
   if (s_chr_tx != nullptr && s_inited) {
     if (s_client != nullptr && !s_client->isConnected()) return;
     if (millis() - s_last_poll > OBD_POLL_MS) {

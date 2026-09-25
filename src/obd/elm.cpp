@@ -61,9 +61,11 @@ bool init(ElmTransport &t) {
 bool query(ElmTransport &t, const char *cmd, char *resp, size_t n) {
   char line[96];
   if (!t.send(cmd)) return false;
+  // Poll-path budget: a healthy CAN reply arrives in milliseconds, so fail
+  // fast and let the next tick retry instead of stalling the UI loop.
   uint32_t start = millis();
-  while (millis() - start < 1500) {
-    if (!t.recvLine(line, sizeof(line), 300)) continue;
+  while (millis() - start < 600) {
+    if (!t.recvLine(line, sizeof(line), 150)) continue;
     if (strchr(line, '>') != nullptr && strlen(line) < 3) continue;
     // Skip the echo of our own command.
     char echo[32];
@@ -82,8 +84,8 @@ bool query(ElmTransport &t, const char *cmd, char *resp, size_t n) {
       strncpy(resp, line, n - 1);
       resp[n - 1] = '\0';
       // Drain to the prompt.
-      while (millis() - start < 1500) {
-        if (!t.recvLine(line, sizeof(line), 200)) break;
+      while (millis() - start < 600) {
+        if (!t.recvLine(line, sizeof(line), 100)) break;
         if (strchr(line, '>') != nullptr) break;
       }
       return true;

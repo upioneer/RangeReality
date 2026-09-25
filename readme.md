@@ -55,9 +55,9 @@ Type `status` in the monitor for theme, orientation, and link state. Type `orien
 
 The splash and boot log stamp every build from git, so the screen always tells you what it is:
 
-* `v0.4.2` — clean release build at a tag. Prod.
-* `v0.4.2-dirty` — uncommitted dev build. Expect bugs; it correlates to tag `v0.4.2` upstream but is not a release. Bump the tag per build to keep versions unique.
-* `v0.4.2-3-gSHA...` — committed work ahead of a tag. Reproducible, but not released.
+* `v0.4.2` — clean build at a tag. Prod-ready, no suffix.
+* `v0.4.3-dirty`, `v0.4.4-dirty`, ... — dev builds after tag `v0.4.2`. Every build auto-bumps patch and keeps the `-dirty` suffix, so each flash is unique and never mistaken for prod.
+* Promotion: when `v0.4.3-dirty` passes smoke testing, commit exactly that source, tag `v0.4.3`, and clean-build. Prod `v0.4.3` is the identical firmware minus the suffix — the pair names one validated build. Picking a prod tag below already-flashed dev numbers prints a warning.
 
 Release builds are gated: building with `RR_RELEASE=1` refuses to compile from a dirty tree, so a clean version string can never come from uncommitted source.
 
