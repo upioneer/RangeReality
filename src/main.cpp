@@ -11,6 +11,9 @@
 
 #include "fw_version.h"  // generated each build by tools/gen_fw_version.py
 #define SPLASH_MS 10000
+// UI refresh rate. Poll cadence (OBD_POLL_MS) is independent: raising this
+// only smooths meter motion and text, never bus traffic.
+#define UI_TICK_MS 50
 
 // ESP32-2432S028R (2.8" CYD): ST7789 240x320.
 // NOTE: this unit carries the ST7789 panel variant, not ILI9341.
@@ -184,7 +187,7 @@ static void splash_done(lv_timer_t *t) {
   idle_show();
   if (old != nullptr && old != s_idle) lv_obj_del(old);
   state_tick(nullptr);
-  lv_timer_create(state_tick, 250, nullptr);
+  lv_timer_create(state_tick, UI_TICK_MS, nullptr);
 }
 
 static void state_tick(lv_timer_t *t) {
@@ -195,6 +198,7 @@ static void state_tick(lv_timer_t *t) {
     Serial.println("[ui] first update, lv timers running");
   }
   if (g_ble != BleLink::CONNECTED) state_stub_update();
+  state_clock_update();
   state_track_peaks();
   state_advisory_update();
   if (g_ble == BleLink::CONNECTED) {
@@ -221,6 +225,7 @@ static void console_help(void) {
   Serial.println("[cmd] orient <portrait|landscape>");
   Serial.println("[cmd] status");
   Serial.println("[cmd] probe   (log standard PID replies while connected)");
+  Serial.println("[cmd] raw <cmd> (send one raw command, dump replies)");
 }
 
 static void console_status(void) {
@@ -256,6 +261,8 @@ static void console_poll(void) {
         console_status();
       } else if (strcmp(line, "probe") == 0) {
         ble_probe();
+      } else if (strncmp(line, "raw ", 4) == 0) {
+        ble_raw(line + 4);
       } else {
         console_help();
       }

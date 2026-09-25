@@ -62,13 +62,35 @@ def read_dev_state(path):
         return None, -1
 
 
-def next_dev_version(tag_part, state_path):
+def header_dev_patch(path, base):
+    """Patch already stamped by a previous build in the same series, else -1.
+
+    The dev counter file can regress (cloud sync restore, second checkout):
+    the stamped header is the monotonic floor so a number is never reused.
+    """
+    import re
+
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        return -1
+    match = re.search(r'#define RR_FW_VERSION "v(\d+)\.(\d+)\.(\d+)-dirty"', text)
+    if match is None:
+        return -1
+    if (int(match.group(1)), int(match.group(2))) != (base[0], base[1]):
+        return -1
+    return int(match.group(3))
+
+
+def next_dev_version(tag_part, state_path, header_path):
     base = parse_triple(tag_part) or (0, 0, 0)
     saved_base, last_patch = read_dev_state(state_path)
     if saved_base != base:
         last_patch = base[2]
-    # Monotonic even if a tag lands inside dev-issued numbers.
-    next_patch = max(last_patch, base[2]) + 1
+    # Monotonic even if a tag lands inside dev-issued numbers or the
+    # counter file regressed: the stamped header is the floor.
+    next_patch = max(last_patch, base[2], header_dev_patch(header_path, base)) + 1
     with open(state_path, "w", encoding="utf-8") as handle:
         handle.write("%d.%d.%d %d" % (base[0], base[1], base[2], next_patch))
     return "v%d.%d.%d" % (base[0], base[1], next_patch)
@@ -102,19 +124,27 @@ def describe_tag_part(describe):
     return describe
 
 
+def is_prod_describe(describe):
+    import re
+
+    return re.fullmatch(r"v\d+\.\d+\.\d+", describe or "") is not None
+
+
 version = firmware_version()
 state_path = os.path.join(env["PROJECT_DIR"], "include", ".fw_devcount")
-if version.endswith("-dirty"):
+out_path = os.path.join(env["PROJECT_DIR"], "include", "fw_version.h")
+if is_prod_describe(version):
+    warn_if_tag_reuses_dev_numbers(version, state_path)
+else:
+    # Anything that is not exactly a tag is not prod: uncommitted work,
+    # commits ahead of the tag, or no tag at all. Dev treatment.
     if os.environ.get("RR_RELEASE") == "1":
         sys.stderr.write(
-            "[fw_version] ERROR: release build refused, tree is dirty. "
-            "Commit or stash first.\n"
+            "[fw_version] ERROR: release build refused, not exactly on a tag. "
+            "Commit, tag, and rebuild clean first.\n"
         )
         env.Exit(1)
-    version = next_dev_version(describe_tag_part(version), state_path) + "-dirty"
-else:
-    warn_if_tag_reuses_dev_numbers(version, state_path)
-out_path = os.path.join(env["PROJECT_DIR"], "include", "fw_version.h")
+    version = next_dev_version(describe_tag_part(version), state_path, out_path) + "-dirty"
 content = '#pragma once\n#define RR_FW_VERSION "%s"\n' % version
 
 try:

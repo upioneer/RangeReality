@@ -147,6 +147,25 @@ static String handle(const String &raw) {
     snprintf(b, sizeof(b), "41 42 %02X %02X", mv >> 8, mv & 0xFF);
     return b;
   }
+  if (cmd == "015B") return "41 5B B8";
+  if (cmd == "22480A") {
+    // Desk stand-in current: -30 A charging in the park window, +20 A out.
+    bool park = (millis() / 1000 % 60) >= 45;
+    uint16_t u = (uint16_t)(park ? -3000 : 2000);
+    char b[32];
+    snprintf(b, sizeof(b), "62 48 0A %02X %02X", (u >> 8) & 0xFF, u & 0xFF);
+    return b;
+  }
+  if (cmd == "22484E") {
+    // Desk stand-in charge power: 11500 W in the park window, else 0.
+    bool park = (millis() / 1000 % 60) >= 45;
+    uint16_t w = park ? 2300 : 0;
+    char b[32];
+    snprintf(b, sizeof(b), "62 48 4E %02X %02X", (w >> 8) & 0xFF, w & 0xFF);
+    return b;
+  }
+  if (cmd == "224845") return "62 48 45 97";
+  if (cmd == "22485E") return "62 48 5E 5D C0";
   if (cmd == "226101") {
     float v, a;
     packScript(v, a);

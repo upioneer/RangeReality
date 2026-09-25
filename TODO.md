@@ -11,3 +11,6 @@ Deferred items, revisited once the functional POC is proven at the truck.
 * Gauge: tune gradient stops and the 120 kW draw / 60 kW regen scales
   against real Lightning peaks.
 * Session peaks: decide whether max values persist across power cycles.
+* Trim detection: decode VIN (0902, multi-frame assembly) to identify
+  SR vs ER pack and apply the right capacity math automatically instead of
+  assuming extended range (131 kWh usable).

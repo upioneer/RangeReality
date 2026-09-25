@@ -39,6 +39,9 @@ bool expectOk(ElmTransport &t, const char *cmd) {
 
 }  // namespace
 
+char last_line[96] = {0};
+uint32_t last_ms = 0;
+
 bool init(ElmTransport &t) {
   char line[64];
   // ATZ resets; answer is a version string, not OK.
@@ -63,7 +66,9 @@ bool query(ElmTransport &t, const char *cmd, char *resp, size_t n) {
   if (!t.send(cmd)) return false;
   // Poll-path budget: a healthy CAN reply arrives in milliseconds, so fail
   // fast and let the next tick retry instead of stalling the UI loop.
+  last_line[0] = '\0';
   uint32_t start = millis();
+  last_ms = 0;
   while (millis() - start < 600) {
     if (!t.recvLine(line, sizeof(line), 150)) continue;
     if (strchr(line, '>') != nullptr && strlen(line) < 3) continue;
@@ -80,18 +85,39 @@ bool query(ElmTransport &t, const char *cmd, char *resp, size_t n) {
     }
     nospace[j] = '\0';
     if (strcmp(nospace, echo) == 0) continue;
-    if (strncmp(line, "41", 2) == 0 || strncmp(line, "62", 2) == 0) {
-      strncpy(resp, line, n - 1);
+    strncpy(last_line, line, sizeof(last_line) - 1);
+    last_line[sizeof(last_line) - 1] = '\0';
+    // Payload may carry an 11-bit CAN header (truck with ATH1: HHHLL plus
+    // payload, e.g. 7EF03410D00) or none (sim). Strip HHHLL to the 41/62
+    // payload; anything else falls through to the NO DATA/? checks.
+    const char *data = line;
+    if (strncmp(data, "41", 2) != 0 && strncmp(data, "62", 2) != 0) {
+      bool headed = strlen(data) >= 9;
+      for (int i = 0; i < 5 && headed; i++) headed = hexVal(data[i]) >= 0;
+      headed = headed && (strncmp(data + 5, "41", 2) == 0 || strncmp(data + 5, "62", 2) == 0);
+      if (headed) {
+        data += 5;
+      } else {
+        if (strstr(line, "?") != nullptr || strstr(line, "NO DATA") != nullptr) {
+          last_ms = millis() - start;
+          return false;
+        }
+        continue;
+      }
+    }
+    {
+      strncpy(resp, data, n - 1);
       resp[n - 1] = '\0';
       // Drain to the prompt.
       while (millis() - start < 600) {
         if (!t.recvLine(line, sizeof(line), 100)) break;
         if (strchr(line, '>') != nullptr) break;
       }
+      last_ms = millis() - start;
       return true;
     }
-    if (strstr(line, "?") != nullptr || strstr(line, "NO DATA") != nullptr) return false;
   }
+  last_ms = millis() - start;
   return false;
 }
 
@@ -111,9 +137,29 @@ bool decode01(const char *resp, uint8_t pid, float &out) {
       if (n < 4) return false;
       out = ((b[2] << 8) | b[3]) / 1000.0f;
       return true;
+    case 0x5B:
+      out = b[2] * 100.0f / 255.0f;
+      return true;
     default:
       return false;
   }
+}
+
+bool set_header(ElmTransport &t, const char *hdr) {
+  char cmd[16];
+  snprintf(cmd, sizeof(cmd), "ATSH%s", hdr);
+  return expectOk(t, cmd);
+}
+
+int decode22(const char *resp, uint16_t pid, uint8_t *out, int max) {
+  uint8_t b[16];
+  int n = parseBytes(resp, b, 16);
+  if (n < 4 || b[0] != 0x62) return -1;
+  if (b[1] != ((pid >> 8) & 0xFF) || b[2] != (pid & 0xFF)) return -1;
+  int m = n - 3;
+  if (m > max) m = max;
+  memcpy(out, b + 3, (size_t)m);
+  return m;
 }
 
 char gear(ElmTransport &t) {

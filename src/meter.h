@@ -22,11 +22,21 @@ inline MeterMode meter_mode(bool parked) {
   return parked ? MeterMode::CHARGE : MeterMode::DRIVE;
 }
 
+// AC sessions top out at the onboard charger; DC fast charge runs to 200.
+// Sensor rule: AC input volts present means AC; past 25 kW can only be DC
+// (no AC EVSE exceeds ~19 kW). Unknown defaults to full scale, never clips.
+#define METER_MAX_CHARGE_AC_KW 20
+inline int charge_scale_kw(long chg_w, float ac_v) {
+  if (ac_v > 100.0f) return METER_MAX_CHARGE_AC_KW;
+  if (chg_w > 25000) return METER_MAX_CHARGE_KW;
+  return METER_MAX_CHARGE_KW;
+}
+
 // Charge fill width in pixels, clamped to [0, full_w].
-inline int meter_charge_fill(int kw, int full_w) {
+inline int meter_charge_fill(int kw, int full_w, int max_kw = METER_MAX_CHARGE_KW) {
   if (kw <= 0) return 0;
-  if (kw >= METER_MAX_CHARGE_KW) return full_w;
-  return kw * full_w / METER_MAX_CHARGE_KW;
+  if (kw >= max_kw) return full_w;
+  return kw * full_w / max_kw;
 }
 
 struct MeterDriveFill {

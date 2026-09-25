@@ -64,6 +64,19 @@ void test_advisor_aero_tip_is_live(void) {
   TEST_ASSERT_TRUE(strstr(b, "63 mph") == nullptr);
 }
 
+void test_charge_scale_ac_dc(void) {
+  TEST_ASSERT_EQUAL(20, charge_scale_kw(11500, 240.0f));
+  TEST_ASSERT_EQUAL(200, charge_scale_kw(150000, 0.0f));
+  TEST_ASSERT_EQUAL(200, charge_scale_kw(11500, -1.0f));
+  TEST_ASSERT_EQUAL(200, charge_scale_kw(-1, -1.0f));
+}
+
+void test_charge_fill_scaled(void) {
+  TEST_ASSERT_EQUAL(138, meter_charge_fill(10, 276, 20));
+  TEST_ASSERT_EQUAL(276, meter_charge_fill(999, 276, 20));
+  TEST_ASSERT_EQUAL(138, meter_charge_fill(100, 276));
+}
+
 int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -71,6 +84,8 @@ int main(int argc, char **argv) {
   RUN_TEST(test_park_selects_full_bar_charge);
   RUN_TEST(test_reverse_neutral_drive_stay_split);
   RUN_TEST(test_charge_fill_clamps);
+  RUN_TEST(test_charge_scale_ac_dc);
+  RUN_TEST(test_charge_fill_scaled);
   RUN_TEST(test_drive_fill_splits);
   RUN_TEST(test_advisor_charging_state);
   RUN_TEST(test_advisor_watt_and_regen);
